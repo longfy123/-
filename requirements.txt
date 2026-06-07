@@ -1,0 +1,14 @@
+easydict
+httpx
+matplotlib
+nni
+numpy
+openai
+pandas
+pyyaml
+scikit-learn
+scipy
+statsmodels
+torch
+torch
+tqdm
