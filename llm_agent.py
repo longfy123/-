@@ -30,7 +30,7 @@ class LLMAgent:
         self.total_requests = 0
 
         self.expert_names = [
-            'stgcn_geo', 'stgcn_poi', 'stgcn_similarity',
+            'spatial_geo', 'spatial_poi', 'spatial_similarity',
             'linear_trend', 'lstm_seasonal', 'fourier_seasonal', 'residual'
         ]
         w = round(1.0 / len(self.expert_names), 6)
@@ -160,7 +160,7 @@ class LLMAgent:
                                expert_predictions: Dict, true_value: float):
         """Math-formula reliance update (fallback)."""
         scene_key = scene["scene_key"]
-        for expert_name in ('stgcn_geo', 'stgcn_poi', 'stgcn_similarity'):
+        for expert_name in ('spatial_geo', 'spatial_poi', 'spatial_similarity'):
             if expert_name in expert_predictions:
                 error = abs(expert_predictions[expert_name] - true_value)
                 self._store_reliance(station_id, scene_key, expert_name, 1.0 / (1.0 + error))
@@ -198,8 +198,8 @@ class LLMAgent:
         """
         scene_key = scene["scene_key"]
 
-        stgcn_errors = {n: abs(expert_predictions.get(n, 0) - true_value)
-                        for n in ('stgcn_geo', 'stgcn_poi', 'stgcn_similarity')}
+        spatial_errors = {n: abs(expert_predictions.get(n, 0) - true_value)
+                        for n in ('spatial_geo', 'spatial_poi', 'spatial_similarity')}
 
         trend = expert_predictions.get('linear_trend', 0)
         lstm_s = expert_predictions.get('lstm_seasonal', 0)
@@ -209,8 +209,8 @@ class LLMAgent:
         component_pred = trend + seasonal + residual
         comp_error = abs(component_pred - true_value)
 
-        current_stgcn_scores = {n: self.get_reliance_score(n, scene_key, station_id)
-                                for n in ('stgcn_geo', 'stgcn_poi', 'stgcn_similarity')}
+        current_spatial_scores = {n: self.get_reliance_score(n, scene_key, station_id)
+                                for n in ('spatial_geo', 'spatial_poi', 'spatial_similarity')}
         current_comp_score = self.get_reliance_score('component_group', scene_key, station_id)
 
         dt = pd.to_datetime(timestamp)
@@ -229,12 +229,12 @@ class LLMAgent:
         else:
             time_period = "Regular Hours"
 
-        stgcn_lines = ""
-        for name in ('stgcn_geo', 'stgcn_poi', 'stgcn_similarity'):
+        spatial_lines = ""
+        for name in ('spatial_geo', 'spatial_poi', 'spatial_similarity'):
             pred = expert_predictions.get(name, 0)
-            err = stgcn_errors[name]
-            cur = current_stgcn_scores[name]
-            stgcn_lines += f"  - {name}: pred={pred:.4f}, error={err:.4f}, current_reliance={cur:.3f}\n"
+            err = spatial_errors[name]
+            cur = current_spatial_scores[name]
+            spatial_lines += f"  - {name}: pred={pred:.4f}, error={err:.4f}, current_reliance={cur:.3f}\n"
 
         prompt = f"""You are an expert coordination agent for mobile base station traffic forecasting.
 A prediction round has just completed. Update the reliance scores based on prediction errors and spatiotemporal context.
@@ -247,23 +247,23 @@ A prediction round has just completed. Update the reliance scores based on predi
 
 **Ground truth traffic value:** {true_value:.4f}
 
-**Group A — STGCN models (individual predictions vs ground truth):**
-{stgcn_lines}
+**Group A — spatial models (individual predictions vs ground truth):**
+{spatial_lines}
 **Group B — Decomposition models (evaluated as a combined unit):**
 - trend={trend:.4f}, seasonal=(lstm={lstm_s:.4f}, fourier={fourier_s:.4f}), residual={residual:.4f}
 - Combined prediction: {component_pred:.4f}, error={comp_error:.4f}, current_reliance={current_comp_score:.3f}
 
 **Task:**
-1. Update each STGCN model's reliance score based on its individual error and scene context (adjust by no more than ±0.2)
+1. Update each spatial model's reliance score based on its individual error and scene context (adjust by no more than ±0.2)
 2. Update Group B's single combined reliance score based on the combined prediction error (adjust by no more than ±0.2)
 3. Also output the internal seasonal split ratio (lstm vs fourier weight, must sum to 1.0)
 
 Output JSON only, no other text. All values must be pre-computed numeric literals (e.g. 0.72), never expressions (e.g. 0.70 + 0.02):
 {{
-    "stgcn_scores": {{
-        "stgcn_geo": 0.70,
-        "stgcn_poi": 0.65,
-        "stgcn_similarity": 0.68
+    "spatial_scores": {{
+        "spatial_geo": 0.70,
+        "spatial_poi": 0.65,
+        "spatial_similarity": 0.68
     }},
     "component_group_score": 0.55,
     "seasonal_split": {{
@@ -325,11 +325,11 @@ Output JSON only, no other text. All values must be pre-computed numeric literal
             print(f"  Warning: LLM reliance update failed ({e}), falling back to math formula")
             print(f"  [DEBUG] Raw content: {repr(content)}")
 
-        for name in ('stgcn_geo', 'stgcn_poi', 'stgcn_similarity'):
-            if new_scores and 'stgcn_scores' in new_scores and name in new_scores['stgcn_scores']:
-                score = float(np.clip(new_scores['stgcn_scores'][name], 0.0, 1.0))
+        for name in ('spatial_geo', 'spatial_poi', 'spatial_similarity'):
+            if new_scores and 'spatial_scores' in new_scores and name in new_scores['spatial_scores']:
+                score = float(np.clip(new_scores['spatial_scores'][name], 0.0, 1.0))
             else:
-                score = 1.0 / (1.0 + stgcn_errors[name])
+                score = 1.0 / (1.0 + spatial_errors[name])
             self._store_reliance(station_id, scene_key, name, score)
 
         if new_scores and 'component_group_score' in new_scores:
@@ -368,7 +368,7 @@ Output JSON only, no other text. All values must be pre-computed numeric literal
         report = []
         scene_key = scene["scene_key"]
 
-        for expert in ('stgcn_geo', 'stgcn_poi', 'stgcn_similarity'):
+        for expert in ('spatial_geo', 'spatial_poi', 'spatial_similarity'):
             pred_value = expert_predictions.get(expert, 0)
             scores = self.reliance_scores.get(expert, {}).get(scene_key, [])
             avg_score = sum(scores) / len(scores) if scores else 0.5
@@ -418,16 +418,16 @@ Output JSON only, no other text. All values must be pre-computed numeric literal
             hist_mean = float(np.mean(hist)) if hist else 0
             hist_trend = float(hist[-1] - hist[0]) if len(hist) > 1 else 0
 
-            active_stgcn_names = [n for n in self.expert_names
-                                  if n in ('stgcn_geo', 'stgcn_poi', 'stgcn_similarity')]
-            stgcn_reliance = {
+            active_spatial_names = [n for n in self.expert_names
+                                  if n in ('spatial_geo', 'spatial_poi', 'spatial_similarity')]
+            spatial_reliance = {
                 name: float(np.mean(self.reliance_scores.get(name, {}).get(scene['scene_key'], [0.5])))
-                for name in active_stgcn_names
+                for name in active_spatial_names
             }
-            total_w = sum(stgcn_reliance.values()) or 1.0
-            stgcn_anchor = sum(
-                stgcn_reliance[n] / total_w * s['expert_predictions'].get(n, 0)
-                for n in active_stgcn_names
+            total_w = sum(spatial_reliance.values()) or 1.0
+            spatial_anchor = sum(
+                spatial_reliance[n] / total_w * s['expert_predictions'].get(n, 0)
+                for n in active_spatial_names
             )
 
             samples_text += f"""
@@ -435,18 +435,18 @@ Output JSON only, no other text. All values must be pre-computed numeric literal
 Time: {s['timestamp']} ({dt.hour:02d}:00, {'Weekend' if dt.weekday()>=5 else 'Weekday'})
 History (last 12 steps): {', '.join([f'{x:.2f}' for x in hist[-12:]])}
 Mean: {hist_mean:.2f}, Trend: {'Rising' if hist_trend > 0 else 'Falling' if hist_trend < 0 else 'Stable'}
-STGCN weighted anchor: {stgcn_anchor:.4f} (reliability-weighted average of the 3 STGCN models)
+spatial weighted anchor: {spatial_anchor:.4f} (reliability-weighted average of the 3 spatial models)
 Expert predictions & reliability:
 {reliance_report}
 """
 
-        active_stgcn = [n for n in self.expert_names if n in ('stgcn_geo', 'stgcn_poi', 'stgcn_similarity')]
-        stgcn_desc_map = {
-            'stgcn_geo': 'Spatial-temporal graph model using geographic proximity between stations',
-            'stgcn_poi': 'Spatial-temporal graph model using POI-based functional similarity between stations',
-            'stgcn_similarity': 'Spatial-temporal graph model using historical traffic pattern similarity',
+        active_spatial = [n for n in self.expert_names if n in ('spatial_geo', 'spatial_poi', 'spatial_similarity')]
+        spatial_desc_map = {
+            'spatial_geo': 'Spatial-temporal graph model using geographic proximity between stations',
+            'spatial_poi': 'Spatial-temporal graph model using POI-based functional similarity between stations',
+            'spatial_similarity': 'Spatial-temporal graph model using historical traffic pattern similarity',
         }
-        stgcn_lines = "\n".join(f"- {n}: {stgcn_desc_map[n]}" for n in active_stgcn)
+        spatial_lines = "\n".join(f"- {n}: {spatial_desc_map[n]}" for n in active_spatial)
         n_total_models = len(self.expert_names)
 
         prompt = f"""You are an AI agent responsible for predicting mobile base station traffic. Your role is to intelligently combine the outputs of {n_total_models} specialist forecasting models by assessing their reliability and producing a final traffic prediction.
@@ -459,8 +459,8 @@ Mobile base station traffic reflects the number of active users in the area. It 
 
 **The {n_total_models} specialist models and what they capture:**
 
-Group A — STGCN models (PRIMARY, spatial-temporal deep learning, generally most accurate):
-{stgcn_lines}
+Group A — spatial models (PRIMARY, spatial-temporal deep learning, generally most accurate):
+{spatial_lines}
 
 Group B — Component models (SUPPLEMENTARY, decomposition-based, used for fine-tuning only):
 - linear_trend: Linear extrapolation of the trend component (predicts direction of change)
@@ -469,9 +469,9 @@ Group B — Component models (SUPPLEMENTARY, decomposition-based, used for fine-
 - residual: Persistence model for the residual component (assumes residual stays constant)
 
 **Weighting rules:**
-- By default, assign 70-85% of total weight to Group A (STGCN models combined)
+- By default, assign 70-85% of total weight to Group A (spatial models combined)
 - Only increase Group B weight above 15-30% if Group B reliability scores are significantly higher than Group A
-- The "STGCN weighted anchor" shown for each sample is the reliability-weighted average of the active STGCN model(s). Empirically, predictions that stray far from this anchor tend to introduce noise rather than signal — treat it as a strong prior and only adjust modestly based on component model evidence or clear historical trend signals
+- The "spatial weighted anchor" shown for each sample is the reliability-weighted average of the active spatial model(s). Empirically, predictions that stray far from this anchor tend to introduce noise rather than signal — treat it as a strong prior and only adjust modestly based on component model evidence or clear historical trend signals
 
 Each model provides a prediction value and a reliability score based on its past accuracy in the current time scenario. Higher reliability means the model has been more accurate in similar past situations.
 
@@ -479,7 +479,7 @@ Each model provides a prediction value and a reliability score based on its past
 1. Read the historical traffic sequence and identify the current trend (rising/falling/stable) and volatility
 2. Consider the time context (rush hour patterns differ from late night; weekends differ from weekdays) and the POI mix (e.g. office-heavy areas peak at commute times)
 3. Weight Group A based on reliability scores and context
-4. Use Group B predictions only as a minor adjustment within the STGCN range
+4. Use Group B predictions only as a minor adjustment within the spatial range
 5. If validation MAE is provided, use it as additional evidence of each model's recent accuracy
 
 {f"{self.experience_summary}" + chr(10) if self.experience_summary else ""}{samples_text}
@@ -531,22 +531,22 @@ Output format (JSON only, no other text):
                         break
                     s = samples[i]
                     scene = self.extract_scene_features(s['timestamp'], s['poi_info'], s['historical_sequence'])
-                    active_stgcn_names = [n for n in self.expert_names
-                                          if n in ('stgcn_geo', 'stgcn_poi', 'stgcn_similarity')]
-                    stgcn_reliance = {
+                    active_spatial_names = [n for n in self.expert_names
+                                          if n in ('spatial_geo', 'spatial_poi', 'spatial_similarity')]
+                    spatial_reliance = {
                         name: float(np.mean(self.reliance_scores.get(name, {}).get(scene['scene_key'], [0.5])))
-                        for name in active_stgcn_names
+                        for name in active_spatial_names
                     }
-                    total_w = sum(stgcn_reliance.values()) or 1.0
-                    stgcn_anchor = sum(
-                        stgcn_reliance[n] / total_w * s['expert_predictions'].get(n, 0)
-                        for n in active_stgcn_names
+                    total_w = sum(spatial_reliance.values()) or 1.0
+                    spatial_anchor = sum(
+                        spatial_reliance[n] / total_w * s['expert_predictions'].get(n, 0)
+                        for n in active_spatial_names
                     )
                     # To ensure prediction stability, we apply a post-processing step that constrains
                     # the final output within a physically plausible range derived from the most
                     # reliable spatial-temporal models.
-                    lower_bound = stgcn_anchor * 0.8
-                    upper_bound = stgcn_anchor * 1.2
+                    lower_bound = spatial_anchor * 0.8
+                    upper_bound = spatial_anchor * 1.2
                     if pred < lower_bound or pred > upper_bound:
                         pred = max(lower_bound, min(upper_bound, pred))
                     validated_preds.append(float(pred))
@@ -616,49 +616,49 @@ Output format (JSON only, no other text):
         description = f"\n[{timestamp} | {weekday} | {time_period}]\n"
         description += f"Ensemble Performance: MAE={ensemble_mae:.4f}, RMSE={ensemble_rmse:.4f}\n"
 
-        stgcn_experts = ['stgcn_geo', 'stgcn_poi', 'stgcn_similarity']
-        stgcn_maes = [expert_errors[e]['mae'] for e in stgcn_experts if e in expert_errors]
-        if stgcn_maes:
-            avg_stgcn_mae = np.mean(stgcn_maes)
-            best_stgcn = min(stgcn_experts, key=lambda e: expert_errors.get(e, {}).get('mae', float('inf')))
-            worst_stgcn = max(stgcn_experts, key=lambda e: expert_errors.get(e, {}).get('mae', 0))
-            if avg_stgcn_mae < ensemble_mae * 1.05:
-                stgcn_assessment = "EXCELLENT - STGCN models performed very well, close to or better than ensemble"
-            elif avg_stgcn_mae < ensemble_mae * 1.15:
-                stgcn_assessment = "GOOD - STGCN models performed well with reasonable accuracy"
-            elif avg_stgcn_mae < ensemble_mae * 1.30:
-                stgcn_assessment = "MODERATE - STGCN models had acceptable but not outstanding performance"
+        spatial_experts = ['spatial_geo', 'spatial_poi', 'spatial_similarity']
+        spatial_maes = [expert_errors[e]['mae'] for e in spatial_experts if e in expert_errors]
+        if spatial_maes:
+            avg_spatial_mae = np.mean(spatial_maes)
+            best_spatial = min(spatial_experts, key=lambda e: expert_errors.get(e, {}).get('mae', float('inf')))
+            worst_spatial = max(spatial_experts, key=lambda e: expert_errors.get(e, {}).get('mae', 0))
+            if avg_spatial_mae < ensemble_mae * 1.05:
+                spatial_assessment = "EXCELLENT - spatial models performed very well, close to or better than ensemble"
+            elif avg_spatial_mae < ensemble_mae * 1.15:
+                spatial_assessment = "GOOD - spatial models performed well with reasonable accuracy"
+            elif avg_spatial_mae < ensemble_mae * 1.30:
+                spatial_assessment = "MODERATE - spatial models had acceptable but not outstanding performance"
             else:
-                stgcn_assessment = "POOR - STGCN models struggled in this scenario, consider increasing component model weight"
-            description += f"\nSTGCN Group Assessment: {stgcn_assessment}\n"
-            description += f"  - Best STGCN: {best_stgcn} (MAE={expert_errors[best_stgcn]['mae']:.4f})\n"
-            description += f"  - Worst STGCN: {worst_stgcn} (MAE={expert_errors[worst_stgcn]['mae']:.4f})\n"
-            description += f"  - Average STGCN MAE: {avg_stgcn_mae:.4f}\n"
+                spatial_assessment = "POOR - spatial models struggled in this scenario, consider increasing component model weight"
+            description += f"\nspatial Group Assessment: {spatial_assessment}\n"
+            description += f"  - Best spatial: {best_spatial} (MAE={expert_errors[best_spatial]['mae']:.4f})\n"
+            description += f"  - Worst spatial: {worst_spatial} (MAE={expert_errors[worst_spatial]['mae']:.4f})\n"
+            description += f"  - Average spatial MAE: {avg_spatial_mae:.4f}\n"
 
         component_experts = ['linear_trend', 'lstm_seasonal', 'fourier_seasonal', 'residual']
         component_present = [e for e in component_experts if e in expert_errors]
         if component_present:
             component_maes = [expert_errors[e]['mae'] for e in component_present]
             avg_component_mae = np.mean(component_maes)
-            if avg_component_mae < avg_stgcn_mae * 0.95:
-                component_assessment = "OUTSTANDING - Component models outperformed STGCN, increase their weight"
-            elif avg_component_mae < avg_stgcn_mae * 1.10:
-                component_assessment = "COMPETITIVE - Component models matched STGCN performance"
-            elif avg_component_mae < avg_stgcn_mae * 1.25:
+            if avg_component_mae < avg_spatial_mae * 0.95:
+                component_assessment = "OUTSTANDING - Component models outperformed spatial, increase their weight"
+            elif avg_component_mae < avg_spatial_mae * 1.10:
+                component_assessment = "COMPETITIVE - Component models matched spatial performance"
+            elif avg_component_mae < avg_spatial_mae * 1.25:
                 component_assessment = "SUPPLEMENTARY - Component models provide useful complementary information"
             else:
                 component_assessment = "WEAK - Component models underperformed, keep weight low"
             description += f"\nComponent Group Assessment: {component_assessment}\n"
             description += f"  - Average Component MAE: {avg_component_mae:.4f}\n"
 
-        stgcn_total_weight = sum(weights_used.get(e, 0) for e in stgcn_experts)
+        spatial_total_weight = sum(weights_used.get(e, 0) for e in spatial_experts)
         component_total_weight = sum(weights_used.get(e, 0) for e in component_experts)
-        description += f"\nWeights Used: STGCN={stgcn_total_weight:.2f} | Component={component_total_weight:.2f}\n"
+        description += f"\nWeights Used: spatial={spatial_total_weight:.2f} | Component={component_total_weight:.2f}\n"
 
-        if "POOR" in stgcn_assessment or "OUTSTANDING" in component_assessment:
+        if "POOR" in spatial_assessment or "OUTSTANDING" in component_assessment:
             description += "Strategy Hint: Consider increasing component model weight for similar scenarios\n"
-        elif "EXCELLENT" in stgcn_assessment and "WEAK" in component_assessment:
-            description += "Strategy Hint: STGCN dominance confirmed, maintain high STGCN weight\n"
+        elif "EXCELLENT" in spatial_assessment and "WEAK" in component_assessment:
+            description += "Strategy Hint: spatial dominance confirmed, maintain high spatial weight\n"
         else:
             description += "Strategy Hint: Current balance seems appropriate, minor adjustments may help\n"
         return description

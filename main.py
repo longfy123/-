@@ -239,7 +239,7 @@ def main():
 
     # Pre-computing expert predictions for all samples 
 
-    expert_names_list = ['stgcn_geo', 'stgcn_poi', 'stgcn_similarity',
+    expert_names_list = ['spatial_geo', 'spatial_poi', 'spatial_similarity',
                          'linear_trend', 'lstm_seasonal', 'fourier_seasonal', 'residual']
 
     def precompute_split(x_data, x_trend_data, x_seasonal_data, x_residual_data,
@@ -284,8 +284,8 @@ def main():
     for sid in station_ids:
         sw, dw = get_station_prior(sid)
         rs = {}
-        for stgcn_n in ['stgcn_geo', 'stgcn_poi', 'stgcn_similarity']:
-            rs[stgcn_n] = {s: [sw, sw, sw] for s in scenes}
+        for spatial_n in ['spatial_geo', 'spatial_poi', 'spatial_similarity']:
+            rs[spatial_n] = {s: [sw, sw, sw] for s in scenes}
         rs['component_group'] = {s: [dw, dw, dw] for s in scenes}
         rs['lstm_seasonal']   = {s: [0.5, 0.5, 0.5] for s in scenes}
         rs['fourier_seasonal'] = {s: [0.5, 0.5, 0.5] for s in scenes}

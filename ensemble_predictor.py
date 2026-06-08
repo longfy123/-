@@ -17,7 +17,7 @@ class EnsemblePredictor:
     # Per-model prediction methods
     # ──────────────────────────────────────────────────────────────
     @torch.no_grad()
-    def predict_stgcn(self, model, x):
+    def predict_spatial(self, model, x):
         x_input = x.unsqueeze(1)          # [B, 1, n_his, V]
         pred = model(x_input)             # [B, 1, 1, V]
         return pred.squeeze(1).squeeze(1) # [B, V]
@@ -81,7 +81,7 @@ class EnsemblePredictor:
                             x_residual=None, station_id=0):
         """
         Args:
-            x:          [B, n_his, V] full sequence (for STGCN)
+            x:          [B, n_his, V] full sequence (for spatial)
             x_trend:    [B, n_his, V] trend component
             x_seasonal: [B, n_his, V] seasonal component
             x_residual: [B, n_his, V] residual component
@@ -91,9 +91,9 @@ class EnsemblePredictor:
         """
         predictions = {}
 
-        predictions['stgcn_geo'] = self.predict_stgcn(self.expert_models['stgcn_geo'], x)
-        predictions['stgcn_poi'] = self.predict_stgcn(self.expert_models['stgcn_poi'], x)
-        predictions['stgcn_similarity'] = self.predict_stgcn(self.expert_models['stgcn_similarity'], x)
+        predictions['spatial_geo'] = self.predict_spatial(self.expert_models['spatial_geo'], x)
+        predictions['spatial_poi'] = self.predict_spatial(self.expert_models['spatial_poi'], x)
+        predictions['spatial_similarity'] = self.predict_spatial(self.expert_models['spatial_similarity'], x)
 
         x_trend_input = x_trend if x_trend is not None else x
         predictions['linear_trend'] = self.predict_linear(self.expert_models['linear_trend'], x_trend_input)
@@ -118,21 +118,21 @@ class EnsemblePredictor:
     def ensemble_predict(self, predictions: Dict, weights: Dict, station_id=None):
         """
         Hierarchical combination:
-          - Group A: STGCN models → weighted average
+          - Group A: spatial models → weighted average
           - Group B: trend + weighted_avg(lstm_seasonal, fourier_seasonal) + residual → sum
           - Final: weighted combination of Group A and Group B
         """
-        stgcn_names = ['stgcn_geo', 'stgcn_poi', 'stgcn_similarity']
+        spatial_names = ['spatial_geo', 'spatial_poi', 'spatial_similarity']
 
         # Group A
-        stgcn_preds, stgcn_weights = [], []
-        for name in stgcn_names:
+        spatial_preds, spatial_weights = [], []
+        for name in spatial_names:
             if name in predictions:
-                stgcn_preds.append(predictions[name])
-                stgcn_weights.append(weights.get(name, 1.0 / 3))
-        stgcn_weight_sum = sum(stgcn_weights) or 1.0
-        stgcn_weights = [w / stgcn_weight_sum for w in stgcn_weights]
-        stgcn_ensemble = sum(w * p for w, p in zip(stgcn_weights, stgcn_preds)) if stgcn_preds else None
+                spatial_preds.append(predictions[name])
+                spatial_weights.append(weights.get(name, 1.0 / 3))
+        spatial_weight_sum = sum(spatial_weights) or 1.0
+        spatial_weights = [w / spatial_weight_sum for w in spatial_weights]
+        spatial_ensemble = sum(w * p for w, p in zip(spatial_weights, spatial_preds)) if spatial_preds else None
 
         # Group B — seasonal weighted average
         lstm_w = weights.get('lstm_seasonal', 0)
@@ -155,20 +155,20 @@ class EnsemblePredictor:
             component_pred = predictions['residual'] if component_pred is None else component_pred + predictions['residual']
 
         # Combine groups
-        if stgcn_ensemble is not None and component_pred is not None:
-            stgcn_vals = [weights.get(n, 0) for n in stgcn_names if n in weights]
+        if spatial_ensemble is not None and component_pred is not None:
+            spatial_vals = [weights.get(n, 0) for n in spatial_names if n in weights]
             seasonal_rep = (weights.get('lstm_seasonal', 0) + weights.get('fourier_seasonal', 0)) / 2
             comp_vals = [weights.get('linear_trend', 0), seasonal_rep, weights.get('residual', 0)]
-            stgcn_total_weight = sum(stgcn_vals) / len(stgcn_vals) if stgcn_vals else 0
+            spatial_total_weight = sum(spatial_vals) / len(spatial_vals) if spatial_vals else 0
             component_total_weight = sum(comp_vals) / len(comp_vals)
-            total = stgcn_total_weight + component_total_weight
+            total = spatial_total_weight + component_total_weight
             if total > 0:
-                sf = stgcn_total_weight / total
+                sf = spatial_total_weight / total
                 cf = component_total_weight / total
             else:
                 sf, cf = 0.9, 0.1
-            return sf * stgcn_ensemble + cf * component_pred
-        elif stgcn_ensemble is not None:
-            return stgcn_ensemble
+            return sf * spatial_ensemble + cf * component_pred
+        elif spatial_ensemble is not None:
+            return spatial_ensemble
         else:
             return component_pred

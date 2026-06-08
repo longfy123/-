@@ -29,7 +29,7 @@ class ExpertModelLoader:
         self.n_pred = 1
         self.expert_models = {}
 
-    def load_stgcn_model(self, model_path, adj_type='distance'):
+    def load_spatial_model(self, model_path, adj_type='distance'):
         dataset_path = f'/root/MoELLM/data/{self.dataset}'
         if adj_type == 'distance':
             adj = sp.load_npz(os.path.join(dataset_path, 'adj_geo.npz'))
@@ -57,7 +57,7 @@ class ExpertModelLoader:
 
         args = Args()
         blocks = [[1], [64, 16, 64], [64, 16, 64], [128, 128], [1]]
-        model = models.STGCNChebGraphConv(args, blocks, self.n_vertex).to(self.device)
+        model = models.SpatialChebGraphConv(args, blocks, self.n_vertex).to(self.device)
         model.load_state_dict(torch.load(model_path, map_location=self.device))
         model.eval()
         return model
@@ -104,11 +104,11 @@ class ExpertModelLoader:
 
     def load_all_models(self):
         dataset_path = f'/root/MoELLM/data/{self.dataset}'
-        self.expert_models['stgcn_geo'] = self.load_stgcn_model(
+        self.expert_models['spatial_geo'] = self.load_spatial_model(
             os.path.join(dataset_path, 'distance.pt'), 'distance')
-        self.expert_models['stgcn_poi'] = self.load_stgcn_model(
+        self.expert_models['spatial_poi'] = self.load_spatial_model(
             os.path.join(dataset_path, 'function.pt'), 'function')
-        self.expert_models['stgcn_similarity'] = self.load_stgcn_model(
+        self.expert_models['spatial_similarity'] = self.load_spatial_model(
             os.path.join(dataset_path, 'pattern.pt'), 'pattern')
         self.expert_models['linear_trend'] = self.load_linear_trend_model(
             os.path.join(dataset_path, 'Linear_trend.pt'))

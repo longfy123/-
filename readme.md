@@ -16,13 +16,13 @@ MoE-LLM consists of three core components that work collaboratively for traffic 
 
 \-Residual Expert: Uses a diffusion-based model for probabilistic forecasting of irregular variations
 
-**2. Spatial Experts:** Three spatial experts capture spatial dependencies by constructing graphs from complementary perspectives using spatio-temporal graph convolutional networks (STGCNs):
+**2. Spatial Experts:** Three spatial experts capture spatial dependencies by constructing graphs from complementary perspectives using spatio-temporal graph convolutional networks:
 
-\-Distance-based STGCN: Constructs adjacency matrix based on Haversine distances between base stations, capturing spatial proximity impacts
+\-Geography expert: Constructs adjacency matrix based on Haversine distances between base stations, capturing spatial proximity impacts
 
-\- Function-based STGCN: Builds adjacency matrix based on functional similarity between regions using POI distribution vectors, capturing urban functional dependencies
+\- Function expert: Builds adjacency matrix based on functional similarity between regions using POI distribution vectors, capturing urban functional dependencies
 
-\- Pattern-based STGCN: Uses Pearson correlation to measure similarity between traffic time series, capturing regions with similar temporal patterns
+\- Pattern expert: Uses Pearson correlation to measure similarity between traffic time series, capturing regions with similar temporal patterns
 
 3\. **Experts Coordination Agent (LLM-based)**: Central coordinator with two functions:
 
@@ -107,7 +107,7 @@ MoELLM/
 │   ├── opt.py                           # Optimizer configuration
 │   └── utility.py                       # Training utility functions
 ├── model/
-│   ├── models.py                        # STGCN spatial expert models
+│   ├── models.py                        # spatial expert models
 │   └── layers.py                        # Graph convolution layers
 ├── decompose.py                         # Time series decomposition
 ├── linear_trend_predictor.py            # Trend expert (Linear)
