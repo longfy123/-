@@ -1,4 +1,5 @@
 import json
+import re
 import time
 import numpy as np
 import pandas as pd
@@ -23,6 +24,10 @@ class LLMAgent:
             client_kwargs["http_client"] = httpx.Client(proxies=proxy_url)
         self.client = openai.OpenAI(**client_kwargs)
         self.model_name = model_name
+
+        self.total_prompt_tokens = 0
+        self.total_completion_tokens = 0
+        self.total_requests = 0
 
         self.expert_names = [
             'stgcn_geo', 'stgcn_poi', 'stgcn_similarity',
@@ -253,7 +258,7 @@ A prediction round has just completed. Update the reliance scores based on predi
 2. Update Group B's single combined reliance score based on the combined prediction error (adjust by no more than ±0.2)
 3. Also output the internal seasonal split ratio (lstm vs fourier weight, must sum to 1.0)
 
-Output JSON only, no other text:
+Output JSON only, no other text. All values must be pre-computed numeric literals (e.g. 0.72), never expressions (e.g. 0.70 + 0.02):
 {{
     "stgcn_scores": {{
         "stgcn_geo": 0.70,
@@ -264,8 +269,7 @@ Output JSON only, no other text:
     "seasonal_split": {{
         "lstm_seasonal": 0.5,
         "fourier_seasonal": 0.5
-    }},
-    "reasoning": "Brief explanation referencing error magnitudes and scene context."
+    }}
 }}
 """
 
@@ -277,9 +281,14 @@ Output JSON only, no other text:
                     {"role": "system", "content": "You are an expert coordination agent for traffic forecasting. Always respond with valid JSON only."},
                     {"role": "user", "content": prompt}
                 ],
+                response_format={"type": "json_object"},
                 temperature=0,
                 max_tokens=400
             )
+            if response.usage:
+                self.total_prompt_tokens += response.usage.prompt_tokens
+                self.total_completion_tokens += response.usage.completion_tokens
+            self.total_requests += 1
             content = response.choices[0].message.content.strip()
             if content.startswith("```json"):
                 content = content[7:]
@@ -288,9 +297,18 @@ Output JSON only, no other text:
             if content.endswith("```"):
                 content = content[:-3]
             content = content.strip()
-            # Remove reasoning field to avoid JSON parse errors from natural language text
-            import re
-            content = re.sub(r',?\s*"reasoning"\s*:\s*"[^"]*"', '', content, flags=re.DOTALL)
+            # Evaluate any arithmetic expressions in JSON values (e.g. "0.70 + 0.02" -> 0.72,
+            # "0.9565 / (0.9565 + 0.8070)" -> 0.542373)
+            def _eval_expr(m):
+                try:
+                    return ': ' + str(round(eval(m.group(1)), 6))
+                except Exception:
+                    return m.group(0)
+            content = re.sub(
+                r':\s*([-+]?\d*\.?\d+(?:\s*[-+*/]\s*(?:\([-+]?\d*\.?\d+(?:\s*[-+*/]\s*[-+]?\d*\.?\d+)*\)|[-+]?\d*\.?\d+))+)',
+                _eval_expr,
+                content
+            )
             # Extract first complete JSON object, stripping any trailing comments or text
             start = content.find('{')
             depth, end = 0, -1
@@ -305,6 +323,7 @@ Output JSON only, no other text:
             new_scores = result
         except Exception as e:
             print(f"  Warning: LLM reliance update failed ({e}), falling back to math formula")
+            print(f"  [DEBUG] Raw content: {repr(content)}")
 
         for name in ('stgcn_geo', 'stgcn_poi', 'stgcn_similarity'):
             if new_scores and 'stgcn_scores' in new_scores and name in new_scores['stgcn_scores']:
@@ -467,8 +486,7 @@ Each model provides a prediction value and a reliability score based on its past
 
 Output format (JSON only, no other text):
 {{
-    "predictions": [value1],
-    "reasoning": "Brief explanation: STGCN anchor used, any Group B influence"
+    "predictions": [value1]
 }}
 """
         for attempt in range(3):
@@ -479,9 +497,14 @@ Output format (JSON only, no other text):
                         {"role": "system", "content": "You are an intelligent ensemble agent for urban mobile traffic forecasting. You combine outputs from multiple specialist models by reasoning about their reliability and the current context. Always output valid JSON only, with no extra text or markdown."},
                         {"role": "user", "content": prompt}
                     ],
+                    response_format={"type": "json_object"},
                     temperature=0,
                     max_tokens=max(1000, 300 + len(samples) * 80)
                 )
+                if response.usage:
+                    self.total_prompt_tokens += response.usage.prompt_tokens
+                    self.total_completion_tokens += response.usage.completion_tokens
+                self.total_requests += 1
                 content = response.choices[0].message.content.strip()
                 if content.startswith("```json"):
                     content = content[7:]

@@ -58,7 +58,6 @@ def main():
     parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--max_workers', type=int, default=20,
                         help='Number of concurrent stations to process (default: 20)')
-    parser.add_argument('--output_dir', type=str, default='llm_agent_results')
     parser.add_argument('--station_ids', type=str, default='0',
                         help='Comma-separated base station IDs to test, e.g., "0,10,20,30" (0-4504 for shanghai)')
     parser.add_argument('--enable_llm', type=str, default='true',
@@ -69,6 +68,8 @@ def main():
                         help='Proxy URL if use_proxy is true')
     parser.add_argument('--timeout', type=float, default=15.0,
                         help='API timeout in seconds (default: 15s)')
+    parser.add_argument('--model_name', type=str, default='gpt-4o-mini',
+                        help='LLM model name (default: gpt-4o-mini)')
     args = parser.parse_args()
 
     enable_llm = args.enable_llm.lower() == 'true'
@@ -83,7 +84,6 @@ def main():
         device = torch.device('cpu')
     print(f"Using device: {device}")
 
-    os.makedirs(args.output_dir, exist_ok=True)
 
     # ── Load data ──
     print("\n" + "="*50)
@@ -295,6 +295,7 @@ def main():
         """Train on reserved set, evaluate on test set for one station."""
         agent = LLMAgent(
             api_key=args.api_key,
+            model_name=args.model_name,
             enable_llm=enable_llm,
             use_proxy=use_proxy,
             proxy_url=args.proxy_url if use_proxy else None,
@@ -398,6 +399,8 @@ def main():
         agent.reliance_scores    = best_reliance_scores
         agent.experience_summary = best_experience_summary
 
+        agent.total_prompt_tokens = 0
+        agent.total_completion_tokens = 0
         num_test = x_test.shape[0]
         test_preds, test_trues = [], []
         for i in range(num_test):
