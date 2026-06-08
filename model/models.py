@@ -3,8 +3,8 @@ import torch.nn as nn
 
 from model import layers
 
-class STGCNChebGraphConv(nn.Module):
-    # STGCNChebGraphConv contains 'TGTND TGTND TNFF' structure
+class SpatialChebGraphConv(nn.Module):
+    # SpatialChebGraphConv contains 'TGTND TGTND TNFF' structure
     # ChebGraphConv is the graph convolution from ChebyNet.
     # Using the Chebyshev polynomials of the first kind as a graph filter.
         
@@ -26,7 +26,7 @@ class STGCNChebGraphConv(nn.Module):
     # F: Fully-Connected Layer
 
     def __init__(self, args, blocks, n_vertex):
-        super(STGCNChebGraphConv, self).__init__()
+        super(SpatialChebGraphConv, self).__init__()
         modules = []
         for l in range(len(blocks) - 3):
             modules.append(layers.STConvBlock(args.Kt, args.Ks, n_vertex, blocks[l][-1], blocks[l+1], args.act_func, args.graph_conv_type, args.gso, args.enable_bias, args.droprate))
@@ -52,8 +52,8 @@ class STGCNChebGraphConv(nn.Module):
         
         return x
 
-class STGCNGraphConv(nn.Module):
-    # STGCNGraphConv contains 'TGTND TGTND TNFF' structure
+class SpatialGraphConv(nn.Module):
+    # SpatialGraphConv contains 'TGTND TGTND TNFF' structure
     # GraphConv is the graph convolution from GCN.
     # GraphConv is not the first-order ChebConv, because the renormalization trick is adopted.
     # Be careful about over-smoothing.
@@ -76,7 +76,7 @@ class STGCNGraphConv(nn.Module):
     # F: Fully-Connected Layer
 
     def __init__(self, args, blocks, n_vertex):
-        super(STGCNGraphConv, self).__init__()
+        super(SpatialGraphConv, self).__init__()
         modules = []
         for l in range(len(blocks) - 3):
             modules.append(layers.STConvBlock(args.Kt, args.Ks, n_vertex, blocks[l][-1], blocks[l+1], args.act_func, args.graph_conv_type, args.gso, args.enable_bias, args.droprate))
