@@ -127,12 +127,6 @@ MoELLM/
 └── readme.md                            # This file
 ```
 
-## Results
-
-MoE-LLM demonstrates superior performance across multiple metrics, achieving **>5%** improvements in both MAE and RMSE.
-
-![MoELLM](result.png)
-
 ## License
 
 This project is for research purposes only.
